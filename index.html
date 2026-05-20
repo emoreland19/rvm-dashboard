@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RVM Target Classification Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; font-size: 14px; }
+
+  header { background: #1F3864; color: white; padding: 16px 28px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
+  header p { font-size: 12px; opacity: 0.65; margin-top: 2px; }
+  .viewer-toggle { display: flex; border: 1px solid rgba(255,255,255,0.3); border-radius: 8px; overflow: hidden; }
+  .viewer-btn { background: transparent; color: rgba(255,255,255,0.65); border: none; padding: 6px 14px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+  .viewer-btn.active { background: rgba(255,255,255,0.18); color: white; }
+
+  .load-banner { background: #FAEEDA; border-bottom: 1px solid #FAC775; padding: 10px 28px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #854F0B; }
+  .load-banner.success { background: #EAF3DE; border-color: #C0DD97; color: #3B6D11; }
+  .load-banner.hidden { display: none; }
+
+  .stats-bar { background: white; border-bottom: 0.5px solid #e0ddd6; padding: 0 28px; display: flex; gap: 0; }
+  .stat { padding: 12px 24px 12px 0; margin-right: 24px; border-right: 0.5px solid #e0ddd6; display: flex; flex-direction: column; gap: 2px; }
+  .stat:last-child { border-right: none; }
+  .stat-val { font-size: 22px; font-weight: 600; color: #1F3864; letter-spacing: -0.5px; }
+  .stat-lbl { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; }
+  .stat.pureplay .stat-val { color: #185FA5; }
+  .stat.capable .stat-val { color: #3B6D11; }
+  .stat.notfit .stat-val { color: #A32D2D; }
+  .stat.pending .stat-val { color: #854F0B; }
+
+  .main { display: grid; grid-template-columns: 240px 1fr; height: calc(100vh - 130px); }
+  .sidebar { background: white; border-right: 0.5px solid #e0ddd6; overflow-y: auto; padding: 16px 0; }
+  .sidebar-title { font-size: 10px; font-weight: 600; color: #aaa; letter-spacing: 0.6px; text-transform: uppercase; padding: 6px 16px 4px; }
+  .sidebar-item { display: flex; align-items: center; justify-content: space-between; padding: 7px 16px; cursor: pointer; font-size: 13px; color: #333; transition: background 0.1s; }
+  .sidebar-item:hover { background: #f5f5f3; }
+  .sidebar-item.active { background: #EBF2FB; color: #185FA5; font-weight: 500; }
+  .sidebar-badge { font-size: 11px; font-weight: 600; background: #f0ede6; color: #666; padding: 2px 7px; border-radius: 10px; }
+  .sidebar-item.active .sidebar-badge { background: #d0e5f7; color: #185FA5; }
+
+  .content { overflow-y: auto; padding: 20px 24px; }
+  .view-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .view-title { font-size: 16px; font-weight: 600; }
+  .view-sub { font-size: 12px; color: #888; margin-top: 2px; }
+
+  .universe-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .u-card { background: white; border: 0.5px solid #e0ddd6; border-radius: 10px; padding: 16px; }
+  .u-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; font-weight: 600; margin-bottom: 6px; }
+  .u-card-val { font-size: 28px; font-weight: 700; letter-spacing: -1px; }
+  .u-card-sub { font-size: 12px; color: #888; margin-top: 3px; }
+  .pureplay-card .u-card-val { color: #185FA5; }
+  .capable-card .u-card-val { color: #3B6D11; }
+  .notfit-card .u-card-val { color: #A32D2D; }
+
+  .progress-wrap { margin-bottom: 20px; }
+  .progress-label { display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-bottom: 6px; }
+  .progress-bar { background: #e8e5de; border-radius: 4px; height: 6px; overflow: hidden; }
+  .progress-fill { background: #185FA5; height: 100%; border-radius: 4px; transition: width 0.3s; }
+
+  .table-wrap { background: white; border-radius: 10px; border: 0.5px solid #e0ddd6; overflow: hidden; }
+  .table-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 0.5px solid #e0ddd6; }
+  .search-box { flex: 1; padding: 6px 10px; border: 0.5px solid #ddd; border-radius: 6px; font-size: 12px; outline: none; background: #fafaf8; }
+  .filter-select { padding: 6px 10px; border: 0.5px solid #ddd; border-radius: 6px; font-size: 12px; outline: none; background: #fafaf8; }
+  .dl-btn { background: #1F3864; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500; white-space: nowrap; }
+  .dl-btn:hover { background: #2a4d82; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.4px; padding: 8px 14px; text-align: left; border-bottom: 0.5px solid #e0ddd6; background: #fafaf8; }
+  td { padding: 9px 14px; font-size: 13px; border-bottom: 0.5px solid #f0ede6; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf8; }
+
+  .conf-badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; }
+  .conf-HIGH { background: #EAF3DE; color: #3B6D11; }
+  .conf-MEDIUM { background: #FAEEDA; color: #854F0B; }
+  .conf-LOW { background: #FCEBEB; color: #A32D2D; }
+
+  .cat-badge { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px; }
+  .cat-RVM_PUREPLAY { background: #E6F1FB; color: #185FA5; }
+  .cat-RVM_CAPABLE { background: #EAF3DE; color: #3B6D11; }
+  .cat-NOT_FIT { background: #FCEBEB; color: #A32D2D; }
+
+  .act-btn { font-size: 11px; font-weight: 500; padding: 4px 9px; border-radius: 5px; border: 0.5px solid #ddd; background: white; cursor: pointer; transition: all 0.12s; color: #444; margin-right: 4px; }
+  .act-btn:hover { border-color: #185FA5; color: #185FA5; background: #EBF2FB; }
+  .act-btn.sel-RVM_PUREPLAY { background: #E6F1FB; color: #185FA5; border-color: #185FA5; }
+  .act-btn.sel-RVM_CAPABLE { background: #EAF3DE; color: #3B6D11; border-color: #3B6D11; }
+  .act-btn.sel-NOT_FIT { background: #FCEBEB; color: #A32D2D; border-color: #A32D2D; }
+
+  .rationale { font-size: 11.5px; color: #666; max-width: 240px; line-height: 1.4; }
+  .empty-state { text-align: center; padding: 60px 20px; color: #aaa; font-size: 13px; }
+  .rishi-btn { background: #1F3864; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .rishi-btn:hover { background: #2a4d82; }
+
+  .loading-box { text-align: center; padding: 60px 20px; }
+  .spinner { width: 28px; height: 28px; border: 3px solid #e0ddd6; border-top-color: #185FA5; border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>RVM Target Classification Dashboard</h1>
+    <p>iNet Security &amp; Surveillance DD &nbsp;·&nbsp; NextGen Growth Partners &nbsp;·&nbsp; May 2026</p>
+  </div>
+  <div class="viewer-toggle">
+    <button class="viewer-btn active" onclick="setViewer('Ned')">Ned</button>
+    <button class="viewer-btn" onclick="setViewer('Will')">Will</button>
+  </div>
+</header>
+
+<div id="load-banner" class="load-banner">
+  ⏳ Loading queues from repository...
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><span class="stat-val" id="stat-total">—</span><span class="stat-lbl">Total in Queue</span></div>
+  <div class="stat pureplay"><span class="stat-val" id="stat-pureplay">—</span><span class="stat-lbl">RVM Pureplay</span></div>
+  <div class="stat capable"><span class="stat-val" id="stat-capable">—</span><span class="stat-lbl">RVM Capable</span></div>
+  <div class="stat notfit"><span class="stat-val" id="stat-notfit">—</span><span class="stat-lbl">Not Fit</span></div>
+  <div class="stat pending"><span class="stat-val" id="stat-reviewed">—</span><span class="stat-lbl">Reviewed</span></div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div style="margin-bottom:8px">
+      <div class="sidebar-title">My Queue</div>
+      <div class="sidebar-item active" onclick="showView('myqueue')" id="nav-myqueue">
+        <span id="my-queue-label">Ned's Queue</span>
+        <span class="sidebar-badge" id="badge-myqueue">—</span>
+      </div>
+    </div>
+    <div style="margin-bottom:8px">
+      <div class="sidebar-title">Universe</div>
+      <div class="sidebar-item" onclick="showView('universe')" id="nav-universe">
+        <span>Full Universe</span>
+        <span class="sidebar-badge" id="badge-universe">—</span>
+      </div>
+    </div>
+    <div style="margin-bottom:8px">
+      <div class="sidebar-title">Deliverable</div>
+      <div class="sidebar-item" onclick="showView('export')" id="nav-export">
+        <span>Export for Rishi</span>
+      </div>
+    </div>
+  </div>
+  <div class="content" id="content">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <div style="font-size:13px; color:#888;">Loading your queue...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let nedData = [];
+let willData = [];
+let currentViewer = 'Ned';
+let currentView = 'myqueue';
+let reviews = JSON.parse(localStorage.getItem('rvm_reviews') || '{}');
+
+// ── CSV parser ────────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+  return lines.slice(1).map((line, idx) => {
+    const cols = [];
+    let inQuote = false, cur = '';
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQuote = !inQuote; }
+      else if (ch === ',' && !inQuote) { cols.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    cols.push(cur.trim());
+    const row = {};
+    headers.forEach((h, i) => row[h] = (cols[i] || '').replace(/^"|"$/g, ''));
+    row._id = 'row_' + idx;
+    return row;
+  }).filter(r => r['Account Name'] && r['Account Name'].trim());
+}
+
+// ── Load CSVs from repo ───────────────────────────────────────────────────────
+async function loadData() {
+  const banner = document.getElementById('load-banner');
+  try {
+    const [nedRes, willRes] = await Promise.all([
+      fetch('RVM_Queue_Ned.csv'),
+      fetch('RVM_Queue_Will.csv')
+    ]);
+    if (!nedRes.ok || !willRes.ok) throw new Error('CSV files not found');
+    const [nedText, willText] = await Promise.all([nedRes.text(), willRes.text()]);
+    nedData = parseCSV(nedText);
+    willData = parseCSV(willText);
+    banner.textContent = '✓ Queues loaded — Ned: ' + nedData.length + ' companies · Will: ' + willData.length + ' companies';
+    banner.className = 'load-banner success';
+    setTimeout(() => banner.className = 'load-banner hidden', 3000);
+    updateStats();
+    renderCurrentView();
+  } catch(e) {
+    banner.textContent = '⚠ Could not load CSV files. Make sure RVM_Queue_Ned.csv and RVM_Queue_Will.csv are in the same folder as index.html.';
+    banner.className = 'load-banner';
+    document.getElementById('content').innerHTML = '<div class="empty-state">CSV files not found in repository.<br>Ensure RVM_Queue_Ned.csv and RVM_Queue_Will.csv are uploaded to the repo root.</div>';
+  }
+}
+
+// ── Viewer toggle ─────────────────────────────────────────────────────────────
+function setViewer(v) {
+  currentViewer = v;
+  document.querySelectorAll('.viewer-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('my-queue-label').textContent = v + "'s Queue";
+  updateStats();
+  renderCurrentView();
+}
+
+function getMyData() { return currentViewer === 'Ned' ? nedData : willData; }
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function updateStats() {
+  const data = getMyData();
+  const reviewed = data.filter(r => reviews[r._id]);
+  const cats = { RVM_PUREPLAY: 0, RVM_CAPABLE: 0, NOT_FIT: 0 };
+  data.forEach(r => {
+    const cat = reviews[r._id] || r['RVM Category'];
+    if (cats[cat] !== undefined) cats[cat]++;
+  });
+  document.getElementById('stat-total').textContent = data.length;
+  document.getElementById('stat-pureplay').textContent = cats.RVM_PUREPLAY;
+  document.getElementById('stat-capable').textContent = cats.RVM_CAPABLE;
+  document.getElementById('stat-notfit').textContent = cats.NOT_FIT;
+  document.getElementById('stat-reviewed').textContent = reviewed.length;
+  document.getElementById('badge-myqueue').textContent = data.length;
+  document.getElementById('badge-universe').textContent = nedData.length + willData.length;
+}
+
+// ── Views ─────────────────────────────────────────────────────────────────────
+function showView(v) {
+  currentView = v;
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  const nav = document.getElementById('nav-' + v);
+  if (nav) nav.classList.add('active');
+  renderCurrentView();
+}
+
+function renderCurrentView() {
+  const c = document.getElementById('content');
+  if (currentView === 'myqueue') c.innerHTML = renderQueue(getMyData(), currentViewer);
+  else if (currentView === 'universe') c.innerHTML = renderUniverse();
+  else if (currentView === 'export') c.innerHTML = renderExport();
+}
+
+// ── Queue view ────────────────────────────────────────────────────────────────
+function renderQueue(data, name) {
+  const done = data.filter(r => reviews[r._id]).length;
+  const pct = data.length ? Math.round((done / data.length) * 100) : 0;
+  return `
+    <div class="view-header">
+      <div><div class="view-title">${name}'s Review Queue</div><div class="view-sub">${done} of ${data.length} reviewed · P1 and P2 priority companies</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-label"><span>Progress</span><span>${pct}%</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+    </div>
+    ${renderTable(data, name.toLowerCase(), true)}`;
+}
+
+// ── Universe view ─────────────────────────────────────────────────────────────
+function renderUniverse() {
+  const all = [...nedData, ...willData];
+  const p = all.filter(r => (reviews[r._id] || r['RVM Category']) === 'RVM_PUREPLAY').length;
+  const ca = all.filter(r => (reviews[r._id] || r['RVM Category']) === 'RVM_CAPABLE').length;
+  const nf = all.filter(r => (reviews[r._id] || r['RVM Category']) === 'NOT_FIT').length;
+  return `
+    <div class="view-header"><div><div class="view-title">Full Universe</div><div class="view-sub">P1 + P2 core review rows — ${all.length} total</div></div></div>
+    <div class="universe-grid">
+      <div class="u-card pureplay-card"><div class="u-card-label">RVM Pureplay</div><div class="u-card-val">${p}</div><div class="u-card-sub">Highest priority targets</div></div>
+      <div class="u-card capable-card"><div class="u-card-label">RVM Capable</div><div class="u-card-val">${ca}</div><div class="u-card-sub">Platform expansion candidates</div></div>
+      <div class="u-card notfit-card"><div class="u-card-label">Not Fit</div><div class="u-card-val">${nf}</div><div class="u-card-sub">Excluded from outreach</div></div>
+    </div>
+    ${renderTable(all, 'universe', false)}`;
+}
+
+// ── Export view ───────────────────────────────────────────────────────────────
+function renderExport() {
+  const all = [...nedData, ...willData];
+  const nedDone = nedData.filter(r => reviews[r._id]).length;
+  const willDone = willData.filter(r => reviews[r._id]).length;
+  const total = all.length;
+  const done = nedDone + willDone;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  return `
+    <div class="view-header"><div><div class="view-title">Export for Rishi Sharma</div><div class="view-sub">Clean CSV of all reviewed classifications</div></div></div>
+    <div style="background:white; border-radius:10px; border:0.5px solid #e0ddd6; padding:22px; margin-bottom:16px;">
+      <div style="font-size:13px; font-weight:600; color:#1F3864; margin-bottom:16px;">Review status</div>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px;">
+        <div style="background:#f5f5f3; border-radius:8px; padding:14px; text-align:center;">
+          <div style="font-size:22px; font-weight:700; color:#1F3864;">${pct}%</div>
+          <div style="font-size:11px; color:#888; margin-top:3px;">Overall complete</div>
+        </div>
+        <div style="background:#f5f5f3; border-radius:8px; padding:14px; text-align:center;">
+          <div style="font-size:22px; font-weight:700; color:#185FA5;">${nedDone}/${nedData.length}</div>
+          <div style="font-size:11px; color:#888; margin-top:3px;">Ned reviewed</div>
+        </div>
+        <div style="background:#f5f5f3; border-radius:8px; padding:14px; text-align:center;">
+          <div style="font-size:22px; font-weight:700; color:#3B6D11;">${willDone}/${willData.length}</div>
+          <div style="font-size:11px; color:#888; margin-top:3px;">Will reviewed</div>
+        </div>
+      </div>
+      <button class="rishi-btn" onclick="exportForRishi()">↓ Download CSV for Rishi</button>
+      <div style="font-size:11px; color:#aaa; margin-top:10px;">Includes: Company, State, Final Category, Confidence, Rationale, Reviewed By, Priority Band</div>
+    </div>
+    <div style="background:#EAF3DE; border-radius:10px; padding:14px 16px; border:0.5px solid #C0DD97; font-size:12px; color:#3B6D11; line-height:1.7;">
+      <strong>Note:</strong> This export reflects decisions made in this browser session. Tags are saved locally in your browser. For a complete merged export, both Ned and Will should download their individual queue CSVs and send to Ned to merge.
+    </div>`;
+}
+
+// ── Table renderer ────────────────────────────────────────────────────────────
+function renderTable(data, context, showActions) {
+  if (!data.length) return '<div class="empty-state">No data loaded.</div>';
+  const rows = data.map(r => {
+    const rev = reviews[r._id];
+    const finalCat = rev || r['RVM Category'] || '';
+    const conf = r['Confidence'] || '';
+    const catLabel = finalCat === 'RVM_PUREPLAY' ? 'Pureplay' : finalCat === 'RVM_CAPABLE' ? 'Capable' : finalCat === 'NOT_FIT' ? 'Not Fit' : finalCat;
+    const actions = showActions
+      ? `<button class="act-btn ${rev==='RVM_PUREPLAY'?'sel-RVM_PUREPLAY':''}" onclick="setReview('${r._id}','RVM_PUREPLAY','${context}')">Pureplay</button><button class="act-btn ${rev==='RVM_CAPABLE'?'sel-RVM_CAPABLE':''}" onclick="setReview('${r._id}','RVM_CAPABLE','${context}')">Capable</button><button class="act-btn ${rev==='NOT_FIT'?'sel-NOT_FIT':''}" onclick="setReview('${r._id}','NOT_FIT','${context}')">Not Fit</button>`
+      : `<span class="cat-badge cat-${finalCat}">${catLabel}</span>`;
+    return `<tr>
+      <td style="font-weight:500;">${r['Account Name'] || ''}</td>
+      <td style="color:#666;">${r['Billing State/Province'] || ''}</td>
+      <td>${r['Priority Band'] || ''}</td>
+      <td><span class="conf-badge conf-${conf}">${conf}</span></td>
+      <td><div class="rationale">${r['Rationale'] || ''}</div></td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="table-wrap">
+    <div class="table-toolbar">
+      <input class="search-box" placeholder="Search companies..." oninput="filterTable(this.value,'${context}')">
+      <select class="filter-select" onchange="filterBand(this.value,'${context}')">
+        <option value="">All priority bands</option>
+        <option value="P1">P1 — Sun Belt + Strong Signal</option>
+        <option value="P2">P2 — Sun Belt + Moderate Signal</option>
+      </select>
+      <button class="dl-btn" onclick="downloadQueue('${context}')">↓ Download CSV</button>
+    </div>
+    <table id="tbl-${context}">
+      <thead><tr><th>Company</th><th>State</th><th>Priority</th><th>Confidence</th><th>Rationale</th><th>${showActions ? 'Your Decision' : 'Category'}</th></tr></thead>
+      <tbody id="tbody-${context}">${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+// ── Filtering ─────────────────────────────────────────────────────────────────
+function filterTable(val, context) {
+  const tbody = document.getElementById('tbody-' + context);
+  if (!tbody) return;
+  Array.from(tbody.rows).forEach(row => {
+    row.style.display = row.cells[0].textContent.toLowerCase().includes(val.toLowerCase()) ? '' : 'none';
+  });
+}
+function filterBand(val, context) {
+  const tbody = document.getElementById('tbody-' + context);
+  if (!tbody) return;
+  Array.from(tbody.rows).forEach(row => {
+    row.style.display = !val || row.cells[2].textContent.includes(val) ? '' : 'none';
+  });
+}
+
+// ── Review actions ────────────────────────────────────────────────────────────
+function setReview(id, cat, context) {
+  reviews[id] = cat;
+  localStorage.setItem('rvm_reviews', JSON.stringify(reviews));
+  updateStats();
+  renderCurrentView();
+}
+
+// ── CSV export ────────────────────────────────────────────────────────────────
+function toCSVRow(r, viewer) {
+  const cat = reviews[r._id] || r['RVM Category'] || '';
+  const reviewedBy = reviews[r._id] ? viewer : 'AI (unreviewed)';
+  return [
+    r['Account Name'], r['Billing State/Province'], cat,
+    r['Confidence'], '"' + (r['Rationale'] || '').replace(/"/g,'""') + '"',
+    reviewedBy, r['Priority Band'], r['Last Activity']
+  ].join(',');
+}
+
+function downloadQueue(context) {
+  const data = context === 'universe' ? [...nedData, ...willData]
+             : context === 'ned' ? nedData : willData;
+  const viewer = context === 'ned' ? 'Ned' : context === 'will' ? 'Will' : 'Both';
+  const header = 'Company,State,Final Category,Confidence,Rationale,Reviewed By,Priority Band,Last Activity\n';
+  const body = data.map(r => toCSVRow(r, viewer)).join('\n');
+  triggerDownload(header + body, `RVM_Queue_${viewer}_reviewed.csv`);
+}
+
+function exportForRishi() {
+  const all = [...nedData, ...willData];
+  const header = 'Company,State,Final Category,Confidence,Rationale,Reviewed By,Priority Band,Last Activity\n';
+  const body = all.map(r => {
+    const viewer = nedData.includes(r) ? 'Ned' : 'Will';
+    return toCSVRow(r, viewer);
+  }).join('\n');
+  triggerDownload(header + body, 'RVM_Target_Universe_Rishi_Sharma.csv');
+}
+
+function triggerDownload(content, filename) {
+  const blob = new Blob([content], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
